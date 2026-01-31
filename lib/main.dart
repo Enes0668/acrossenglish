@@ -3,6 +3,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'services/auth_service.dart';
 import 'pages/welcome_page.dart';
+import 'pages/level_test_page.dart';
 import 'models/user_model.dart';
 
 void main() async {
@@ -60,6 +61,10 @@ class _AuthWrapperState extends State<AuthWrapper> {
         // However, for this simple implementation, we can check if data exists.
         
         if (snapshot.hasData) {
+          final user = snapshot.data!;
+          if (user.level == 'I would like a level test') {
+            return const LevelTestPage();
+          }
           return const HomePage();
         } else {
           return const WelcomePage();

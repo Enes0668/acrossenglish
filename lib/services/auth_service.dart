@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 import '../models/user_model.dart';
 
 class AuthService {
@@ -14,7 +13,6 @@ class AuthService {
 
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final GoogleSignIn _googleSignIn = GoogleSignIn();
 
   // Stream controller to broadcast auth changes
   final _userController = StreamController<UserModel?>.broadcast();
@@ -67,12 +65,16 @@ class AuthService {
         password: password,
       );
       
-      // The listener in constructor will pick this up, but we can return _currentUser
-      // waiting for the listener might be tricky, so we can manual fetch to return fast.
-      // However, to keep it simple, we await the stream? No, return value logic:
-      
       final User? user = result.user;
       if (user != null) {
+         if (!user.emailVerified) {
+           await _auth.signOut();
+           throw FirebaseAuthException(
+             code: 'email-not-verified',
+             message: 'Please verify your email before logging in.',
+           );
+         }
+
          // Update last login
          await _firestore.collection('users').doc(user.uid).update({
           'lastLogin': DateTime.now().toIso8601String(),
@@ -122,10 +124,16 @@ class AuthService {
         // Use uid as document ID
         await _firestore.collection('users').doc(user.uid).set(newUserMap);
         
-        // Fetch and cache manually to ensure immediate availability
-        _currentUser = UserModel.fromMap(newUserMap, user.uid);
-        _userController.add(_currentUser);
-        return _currentUser;
+        // Send verification email
+        await user.sendEmailVerification();
+        
+        // Sign out immediately so they're not logged in automatically
+        await _auth.signOut();
+        
+        // Return null or handle as needed to indicate "waiting for verification"
+        // Since the return type is Future<UserModel?>, returning null is appropriate 
+        // as we are effectively not "logging in" the user yet.
+        return null; 
       }
       return null;
     } catch (e) {
@@ -133,54 +141,15 @@ class AuthService {
     }
   }
 
-  // Sign in with Google
-  Future<UserModel?> signInWithGoogle() async {
+  // Update user level and score
+  Future<void> updateUserLevel(String uid, String newLevel, String score) async {
     try {
-      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
-
-      if (googleUser == null) {
-        return null; 
-      }
-
-      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
-      final AuthCredential credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
-        idToken: googleAuth.idToken,
-      );
-
-      final UserCredential result = await _auth.signInWithCredential(credential);
-      final User? user = result.user;
-      
-      if (user != null) {
-        // Check if user exists in Firestore
-        final docSnapshot = await _firestore.collection('users').doc(user.uid).get();
-
-        if (docSnapshot.exists) {
-           await _firestore.collection('users').doc(user.uid).update({
-            'lastLogin': DateTime.now().toIso8601String(),
-          });
-          _currentUser = UserModel.fromMap(docSnapshot.data()!, user.uid);
-        } else {
-          // Create new user from Google details
-          final newUserMap = {
-            'createdAt': DateTime.now().toIso8601String(),
-            'dailyTime': '0',
-            'email': user.email ?? '',
-            // 'password': '', // REMOVED
-            'lastLogin': DateTime.now().toIso8601String(),
-            'level': 'Beginner', // Default for Google Sign In
-            'levelScore': '0',
-            'username': user.displayName ?? 'Google User',
-          };
-
-          await _firestore.collection('users').doc(user.uid).set(newUserMap);
-          _currentUser = UserModel.fromMap(newUserMap, user.uid);
-        }
-
-        _userController.add(_currentUser);
-        return _currentUser;
-      }
-      return null;
+      await _firestore.collection('users').doc(uid).update({
+        'level': newLevel,
+        'levelScore': score,
+      });
+      // Refresh local user data
+      await _fetchAndEmitUserData(uid);
     } catch (e) {
       rethrow;
     }
@@ -188,7 +157,6 @@ class AuthService {
 
   // Sign out
   Future<void> signOut() async {
-    await _googleSignIn.signOut();
     await _auth.signOut();
     // Listener will catch null and update stream
   }

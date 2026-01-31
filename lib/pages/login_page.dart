@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../services/auth_service.dart';
 
 class LoginPage extends StatefulWidget {
@@ -31,6 +30,16 @@ class _LoginPageState extends State<LoginPage> {
            Navigator.of(context).popUntil((route) => route.isFirst); 
            // In a real app we might navigate to Home here or let the stream listener in main.dart handle it
         }
+      } on FirebaseAuthException catch (e) {
+        if (mounted) {
+          String message = 'Login failed: ${e.message}';
+          if (e.code == 'email-not-verified') {
+            message = 'Email not verified. Please check your inbox.';
+          }
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(message)),
+          );
+        }
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -46,32 +55,6 @@ class _LoginPageState extends State<LoginPage> {
       }
     }
   }
-
-  void _loginWithGoogle() async {
-    setState(() {
-      _isLoading = true;
-    });
-    try {
-      await _authService.signInWithGoogle();
-      if (mounted) {
-         Navigator.of(context).popUntil((route) => route.isFirst);
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Google Login failed: ${e.toString()}')),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
-    }
-  }
-
-
 
   @override
   Widget build(BuildContext context) {
@@ -148,30 +131,6 @@ class _LoginPageState extends State<LoginPage> {
                       ),
                       child: const Text('LOGIN', style: TextStyle(fontSize: 18)),
                     ),
-              const SizedBox(height: 20),
-              const Row(
-                children: [
-                   Expanded(child: Divider()),
-                   Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 10),
-                    child: Text('OR'),
-                  ),
-                   Expanded(child: Divider()),
-                ],
-              ),
-              const SizedBox(height: 20),
-              OutlinedButton.icon(
-                onPressed: _isLoading ? null : _loginWithGoogle,
-                icon: const FaIcon(FontAwesomeIcons.google, color: Colors.red),
-                label: const Text('Sign in with Google'),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(30),
-                  ),
-                  foregroundColor: Colors.black,
-                ),
-              ),
             ],
           ),
         ),

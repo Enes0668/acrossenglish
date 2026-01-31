@@ -33,9 +33,9 @@ class _RegisterPageState extends State<RegisterPage> {
           );
         if (mounted) {
            ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Registration successful! Logging you in...')),
+            const SnackBar(content: Text('Verification email sent! Please check your inbox before logging in.')),
           );
-           // Pop until the first route (usually AuthWrapper will see the change and show HomePage)
+           // Pop until the first route (usually AuthWrapper will see null user and show WelcomePage)
            Navigator.of(context).popUntil((route) => route.isFirst);
         }
       } catch (e) {
@@ -167,7 +167,7 @@ class _RegisterPageState extends State<RegisterPage> {
                     borderRadius: BorderRadius.circular(30),
                   ),
                 ),
-                items: ['Beginner', 'Intermediate', 'Advanced']
+                items: ['Beginner', 'Intermediate', 'Advanced', 'I would like a level test']
                     .map((level) => DropdownMenuItem(
                           value: level,
                           child: Text(level),

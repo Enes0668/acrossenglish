@@ -1,3 +1,4 @@
+import 'package:acrossenglish/pages/daily_goal_page.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:provider/provider.dart';
@@ -125,6 +126,12 @@ class _AuthWrapperState extends State<AuthWrapper> {
         }
 
         if (snapshot.hasData) {
+          final user = snapshot.data!;
+          // Default is 0 when generated in register. 
+          // If 0, show DailyGoalPage.
+          if (user.dailyStudyMinutes == 0) {
+            return const DailyGoalPage();
+          }
           return const MainScreen();
         } else {
           return const WelcomePage();
@@ -133,4 +140,3 @@ class _AuthWrapperState extends State<AuthWrapper> {
     );
   }
 }
-

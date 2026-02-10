@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:confetti/confetti.dart';
-import '../models/content_model.dart';
 import '../models/plan_model.dart';
 import '../models/user_model.dart';
-import '../providers/content_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/auth_service.dart';
 import '../services/plan_service.dart';
@@ -39,50 +37,31 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _loadDailyPlan() async {
     final user = AuthService().currentUser;
-    final contentProvider = Provider.of<ContentProvider>(context, listen: false);
     final settingsProvider = Provider.of<SettingsProvider>(context, listen: false);
 
     if (user != null) {
-      // Sync local settings with user model if needed, or just rely on what PlanService does.
-      // Ideally, PlanService reads from Firestore User. 
-      // Ensure daily goal is consistent.
-      if (settingsProvider.dailyGoalHours != user.dailyStudyGoal) {
-          // If local settings differ (e.g. just changed), we might need to update user first?
-          // For now, assuming SettingsPage updates Firestore, so User model is fresh.
+      // Sync local settings if needed
+      if (settingsProvider.dailyGoalMinutes != user.dailyStudyMinutes) {
+          // Update provider to match Firestore user data (Source of Truth)
+          // We do this in post frame callback to avoid build conflicts if needed, 
+          // or just call setDailyGoal (which notifies listeners).
+          // Since we are in an async method _loadDailyPlan, we can call it.
+          settingsProvider.setDailyGoal(user.dailyStudyMinutes);
       }
 
       try {
-        final plan = await _planService.getOrGenerateDailyPlan(user, contentProvider.contents);
+        // Pass empty list since we don't use library content generation anymore
+        final plan = await _planService.getOrGenerateDailyPlan(user, []);
         
         if (mounted) {
           setState(() {
             _dailyPlan = plan;
             _isLoadingPlan = false;
           });
-          
-          // Check for new content suggested by PlanService
-          _checkForNewContent(plan);
         }
       } catch (e) {
         debugPrint("Error loading plan: $e");
         if (mounted) setState(() => _isLoadingPlan = false);
-      }
-    }
-  }
-
-  void _checkForNewContent(DailyPlan plan) {
-    final contentProvider = Provider.of<ContentProvider>(context, listen: false);
-    for (var task in plan.tasks) {
-      if (task.userContentData != null && task.userContentData!['new_content'] == 'true') {
-        final data = task.userContentData!;
-        // Add to library
-        contentProvider.addNewContent(ContentModel(
-          id: DateTime.now().millisecondsSinceEpoch.toString(), // Generate ID
-          title: data['title'] ?? 'Unknown',
-          imageUrl: '', // Placeholder
-          type: data['type'] ?? 'book',
-          level: 'Intermediate', // Default
-        ));
       }
     }
   }
@@ -135,26 +114,29 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  String _getMotivationMessage(int streak) {
+    if (streak == 0) return "Let’s start your first day!";
+    if (streak == 1) return "Great start! Day 1 completed 🎉";
+    if (streak <= 3) return "Nice! You’re building a habit 🔥";
+    if (streak <= 6) return "Awesome! Almost a full week 👏";
+    if (streak == 7) return "1 WEEK STREAK! Amazing work! 🏆";
+    if (streak <= 13) return "Incredible consistency 💪";
+    if (streak == 14) return "TWO WEEKS STRAIGHT! 🚀";
+    if (streak <= 29) return "Impressive discipline!";
+    if (streak == 30) return "30 DAYS STREAK! LEGENDARY 🏅";
+    return "You’re unstoppable 🔥";
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = AuthService().currentUser;
     
-    // Listen to settings to trigger reload if goal changes
-    // We use a Consumer here to check if goal changed compared to plan
-    
     return Consumer<SettingsProvider>(
       builder: (context, settings, child) {
-        // Simple check: If plan exists and duration mismatch, reload.
-        // Note: This might cause loop if not careful. 
-        // User.dailyStudyGoal should be updated by SettingsPage.
-        // If _dailyPlan.totalDuration != settings.dailyGoal * 60, reload.
         if (_dailyPlan != null && !_isLoadingPlan) {
-            int settingMinutes = settings.dailyGoalHours * 60;
-            // Allow small buffer or exact match
+            int settingMinutes = settings.dailyGoalMinutes;
             if (_dailyPlan!.totalDurationMinutes != settingMinutes) {
-               // Trigger reload (microtask to avoid build error)
                WidgetsBinding.instance.addPostFrameCallback((_) { 
-                 // Ensure we don't spam reloads. Set loading true immediately.
                   if(mounted && !_isLoadingPlan) {
                      setState(() => _isLoadingPlan = true);
                      _loadDailyPlan();
@@ -185,10 +167,10 @@ class _HomePageState extends State<HomePage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     _buildHeader(user),
+                    const SizedBox(height: 20),
+                    _buildStreakSection(user),
                     const SizedBox(height: 30),
                     _buildDailyPlanSection(),
-                    const SizedBox(height: 30),
-                    _buildLibrarySection(context),
                   ],
                 ),
               ),
@@ -239,7 +221,7 @@ class _HomePageState extends State<HomePage> {
                const Icon(Icons.access_time, size: 16, color: Colors.deepPurple),
                const SizedBox(width: 4),
                Text(
-                 '${user?.dailyStudyGoal ?? 1}h Goal',
+                 '${user?.dailyStudyMinutes ?? 30} min Goal',
                  style: const TextStyle(
                    color: Colors.deepPurple,
                    fontWeight: FontWeight.bold
@@ -249,6 +231,77 @@ class _HomePageState extends State<HomePage> {
            ),
          )
       ],
+    );
+  }
+
+  Widget _buildStreakSection(UserModel? user) {
+    int streak = user?.currentStreak ?? 0;
+    int best = user?.bestStreak ?? 0;
+    
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Colors.orange.shade100, Colors.orange.shade50],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.orange.shade200),
+      ),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              Column(
+                children: [
+                   const Text("Current Streak", style: TextStyle(color: Colors.black54, fontSize: 12)),
+                   const SizedBox(height: 4),
+                   Row(
+                     children: [
+                       const Text("🔥", style: TextStyle(fontSize: 20)),
+                       const SizedBox(width: 6),
+                       Text(
+                         "$streak days", 
+                         style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 22, color: Colors.orange)
+                       ),
+                     ],
+                   )
+                ],
+              ),
+              Container(width: 1, height: 40, color: Colors.orange.shade200),
+              Column(
+                 children: [
+                   const Text("Best Streak", style: TextStyle(color: Colors.black54, fontSize: 12)),
+                   const SizedBox(height: 4),
+                   Row(
+                     children: [
+                       const Text("🏆", style: TextStyle(fontSize: 20)),
+                       const SizedBox(width: 6),
+                       Text(
+                         "$best days", 
+                         style: TextStyle(fontWeight: FontWeight.bold, fontSize: 22, color: Colors.orange.shade800)
+                       ),
+                     ],
+                   )
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            _getMotivationMessage(streak),
+            style: TextStyle(
+              fontSize: 14,
+              fontStyle: FontStyle.italic,
+              color: Colors.orange.shade900,
+              fontWeight: FontWeight.w600
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      )
     );
   }
 
@@ -337,140 +390,4 @@ class _HomePageState extends State<HomePage> {
       ],
     );
   }
-
-  Widget _buildLibrarySection(BuildContext context) {
-    return Consumer<ContentProvider>(
-      builder: (context, contentProvider, child) {
-        // Show active content (not completed logic handles completion locally until refreshed, 
-        // but markAsCompleted updates the list, so it will disappear from this list automatically if we filter?
-        // Let's show All logic or just Active logic. Requirement: "Library'de olması gerekenler şu an tüketiyor olduğumuz içerikler olmalı."
-        // So we show active content.
-        
-        final contents = contentProvider.activeContent;
-        
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              "Library (In Progress)",
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 16),
-            contents.isEmpty 
-              ? const Text("No active content. Check your plan for suggestions!")
-              : ListView.separated(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: contents.length,
-                  separatorBuilder: (context, index) => const SizedBox(height: 16),
-                  itemBuilder: (context, index) {
-                    final content = contents[index];
-                    return _buildSimpleContentCard(content, context);
-                  },
-                ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildSimpleContentCard(ContentModel content, BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-        border: Border.all(color: Colors.grey.withOpacity(0.1))
-      ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.all(16),
-        title: Text(
-          content.title,
-          style: const TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: 8.0),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: content.type == 'book' ? Colors.blue.withOpacity(0.1) : Colors.green.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  content.type.toUpperCase(),
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                    color: content.type == 'book' ? Colors.blue : Colors.green,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                content.level,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey[600],
-                ),
-              ),
-            ],
-          ),
-        ),
-        trailing: content.isCompleted
-            ? const Icon(Icons.check_circle, color: Colors.green, size: 30)
-            : IconButton(
-                icon: const Icon(Icons.check_circle_outline),
-                tooltip: 'Mark as Finished',
-                onPressed: () {
-                  _showCompletionDialog(context, content);
-                },
-              ),
-      ),
-    );
-  }
-
-  void _showCompletionDialog(BuildContext context, ContentModel content) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Finished this content?'),
-        content: Text('Did you finish reading/watching "${content.title}" completely?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('No'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              Provider.of<ContentProvider>(context, listen: false).markAsCompleted(content.id);
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Marked "${content.title}" as completed!')),
-              );
-              
-              // Trigger plan reload to get new content!
-              setState(() => _isLoadingPlan = true);
-              await _loadDailyPlan();
-            },
-            child: const Text('Yes, Finished'),
-          ),
-        ],
-      ),
-    );
-  }
 }
-

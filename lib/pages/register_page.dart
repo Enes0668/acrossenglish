@@ -16,6 +16,7 @@ class _RegisterPageState extends State<RegisterPage> {
   final TextEditingController _confirmPasswordController = TextEditingController();
   String? _selectedLevel;
 
+
   final AuthService _authService = AuthService();
   bool _isLoading = false;
 
@@ -158,6 +159,9 @@ class _RegisterPageState extends State<RegisterPage> {
                 },
               ),
               const SizedBox(height: 20),
+              const SizedBox(height: 20),
+
+              const SizedBox(height: 20),
               DropdownButtonFormField<String>(
                 value: _selectedLevel,
                 decoration: InputDecoration(
@@ -167,7 +171,7 @@ class _RegisterPageState extends State<RegisterPage> {
                     borderRadius: BorderRadius.circular(30),
                   ),
                 ),
-                items: ['Beginner', 'Intermediate', 'Advanced', 'I would like a level test']
+                items: ['Beginner', 'Intermediate', 'Advanced']
                     .map((level) => DropdownMenuItem(
                           value: level,
                           child: Text(level),

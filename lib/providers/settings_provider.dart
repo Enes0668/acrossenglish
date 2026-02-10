@@ -3,10 +3,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class SettingsProvider with ChangeNotifier {
   bool _notificationsEnabled = true;
-  int _dailyGoalHours = 1;
+  int _dailyGoalMinutes = 30;
 
   bool get notificationsEnabled => _notificationsEnabled;
-  int get dailyGoalHours => _dailyGoalHours;
+  int get dailyGoalMinutes => _dailyGoalMinutes;
 
   SettingsProvider() {
     _loadSettings();
@@ -15,7 +15,7 @@ class SettingsProvider with ChangeNotifier {
   void _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
     _notificationsEnabled = prefs.getBool('notificationsEnabled') ?? true;
-    _dailyGoalHours = prefs.getInt('dailyGoalHours') ?? 1;
+    _dailyGoalMinutes = prefs.getInt('dailyGoalMinutes') ?? 30;
     notifyListeners();
   }
 
@@ -26,10 +26,10 @@ class SettingsProvider with ChangeNotifier {
     await prefs.setBool('notificationsEnabled', enabled);
   }
 
-  void setDailyGoal(int hours) async {
-    _dailyGoalHours = hours;
+  void setDailyGoal(int minutes) async {
+    _dailyGoalMinutes = minutes;
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('dailyGoalHours', hours);
+    await prefs.setInt('dailyGoalMinutes', minutes);
   }
 }

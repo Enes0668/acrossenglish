@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'home_page.dart';
 import 'settings_page.dart';
-import 'history_page.dart';
+import 'statistics_page.dart';
+// import 'history_page.dart'; // Deprecated
+
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -16,7 +18,7 @@ class _MainScreenState extends State<MainScreen> {
   final List<Widget> _pages = [
     const SettingsPage(),
     const HomePage(),
-    const HistoryPage(),
+    const StatisticsPage(),
   ];
 
   @override
@@ -40,8 +42,8 @@ class _MainScreenState extends State<MainScreen> {
             label: 'Home',
           ),
           NavigationDestination(
-            icon: Icon(Icons.history),
-            label: 'History',
+            icon: Icon(Icons.bar_chart),
+            label: 'Statistics',
           ),
         ],
       ),

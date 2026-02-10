@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/user_model.dart';
+import 'package:flutter/foundation.dart';
 
 class AuthService {
   // Singleton instance
@@ -33,13 +34,8 @@ class AuthService {
       } else {
         // Reload user to get the latest emailVerified status
         await user.reload();
-        // user object might need refreshing after reload, but the one from stream might be stale regarding verification if we don't fetch fresh.
-        // Actually, user.reload() refreshes the current instance in FirebaseAuth cache, but we should check the refreshed property.
-        // However, `user` variable here is from the event. It's safer to get `_auth.currentUser` after reload or trust the event if it triggered by reload (which it usually doesn't).
-        // Let's rely on the property. Ideally we should allow login ONLY if verified.
         
         if (!user.emailVerified) {
-             // If not verified, we treat as not logged in for the app's purpose
              _currentUser = null;
              _userController.add(null);
              return;
@@ -58,12 +54,9 @@ class AuthService {
       if (docSnapshot.exists) {
         _currentUser = UserModel.fromMap(docSnapshot.data()!, uid);
         _userController.add(_currentUser);
-      } else {
-        // If doc doesn't exist (e.g. during registration race), we might wait or do nothing.
-        // We assume register/signIn logic might also handle the emission in those cases.
       }
     } catch (e) {
-      // Error logging can be added here if needed
+      debugPrint("Error fetching user data: $e");
       _userController.addError(e);
     }
   }
@@ -107,7 +100,7 @@ class AuthService {
     }
   }
 
-  // Register with email, password, username, and level
+  // Register
   Future<UserModel?> registerWithEmailAndPassword({
     required String email,
     required String password,
@@ -123,16 +116,20 @@ class AuthService {
 
       final User? user = result.user;
       if (user != null) {
-        // Create new user document in Firestore (NO PASSWORD)
+        // Create new user document in Firestore
         final newUserMap = {
           'createdAt': DateTime.now().toIso8601String(),
           'dailyTime': '0',
           'email': email,
-          // 'password': password, // REMOVED
           'lastLogin': DateTime.now().toIso8601String(),
           'level': level,
           'levelScore': '0',
           'username': username,
+          'completedContentIds': [],
+          'dailyStudyMinutes': 0, // 0 indicates not set
+          'currentStreak': 0,
+          'bestStreak': 0,
+          'lastCompletedDate': '',
         };
 
         // Use uid as document ID
@@ -141,12 +138,7 @@ class AuthService {
         // Send verification email
         await user.sendEmailVerification();
         
-        // Sign out immediately so they're not logged in automatically
         await _auth.signOut();
-        
-        // Return null or handle as needed to indicate "waiting for verification"
-        // Since the return type is Future<UserModel?>, returning null is appropriate 
-        // as we are effectively not "logging in" the user yet.
         return null; 
       }
       return null;
@@ -156,24 +148,33 @@ class AuthService {
   }
 
   // Update user level and score
-  Future<void> updateUserLevel(String uid, String newLevel, String score) async {
+  Future<void> updateUserProgress(String uid, {
+    List<String>? completedContentIds,
+    String? level,
+    String? levelScore,
+  }) async {
     try {
-      await _firestore.collection('users').doc(uid).update({
-        'level': newLevel,
-        'levelScore': score,
-      });
-      // Refresh local user data
-      await _fetchAndEmitUserData(uid);
+      final Map<String, dynamic> data = {};
+      if(completedContentIds != null) data['completedContentIds'] = completedContentIds;
+      if(level != null) data['level'] = level;
+      if(levelScore != null) data['levelScore'] = levelScore;
+
+      if(data.isNotEmpty) {
+          await _firestore.collection('users').doc(uid).update(data);
+          // Refresh local user data
+          await _fetchAndEmitUserData(uid);
+      }
     } catch (e) {
+      debugPrint("Error updating user progress: $e");
       rethrow;
     }
   }
 
-  // Update user daily study goal
-  Future<void> updateDailyStudyGoal(String uid, int hours) async {
+  // Update user daily study minutes
+  Future<void> updateDailyStudyMinutes(String uid, int minutes) async {
     try {
       await _firestore.collection('users').doc(uid).update({
-        'dailyStudyGoal': hours,
+        'dailyStudyMinutes': minutes,
       });
       // Refresh local user data
       await _fetchAndEmitUserData(uid);
@@ -185,7 +186,6 @@ class AuthService {
   // Sign out
   Future<void> signOut() async {
     await _auth.signOut();
-    // Listener will catch null and update stream
   }
   
   void dispose() {

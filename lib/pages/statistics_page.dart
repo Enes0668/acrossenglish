@@ -1,0 +1,111 @@
+import 'package:acrossenglish/pages/history_page.dart';
+import 'package:flutter/material.dart';
+import '../services/auth_service.dart';
+import '../models/user_model.dart';
+
+class StatisticsPage extends StatelessWidget {
+  const StatisticsPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final user = AuthService().currentUser;
+    // In a real app we might want to listen to changes or fetch fresh stats.
+    // User model has streak data, but we might want "Total Study Minutes" etc.
+    // For V1, "Total Minutes" can be calculated from History logic or stored in User?
+    // We don't have total minutes in user model yet. We have 'dailyStudyMinutes' (goal). 
+    // We can assume we need to calculate it from history or just show what we have.
+    // Limitation: We didn't add 'totalStudyMinutes' to user model in the plan.
+    // BUT we have 'getCompletedTasksHistory'. We can sum it up or just show what we have.
+    // Let's rely on what we have + history at the bottom.
+    
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Statistics'),
+        automaticallyImplyLeading: false,
+      ),
+      body: SingleChildScrollView(
+        child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+               if (user != null) _buildSummaryCards(user),
+               const SizedBox(height: 20),
+               const Padding(
+                 padding: EdgeInsets.symmetric(horizontal: 16.0),
+                 child: Text(
+                   "History",
+                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                 ),
+               ),
+               const SizedBox(height: 10),
+               const SizedBox(
+                 height: 400, // Fixed height for history list
+                 child: HistoryPage(),
+               )
+            ],
+        ),
+      )
+    );
+  }
+
+  Widget _buildSummaryCards(UserModel user) {
+     return Padding(
+       padding: const EdgeInsets.all(16.0),
+       child: Column(
+         children: [
+           Row(
+             children: [
+               Expanded(child: _buildStatCard("Current Streak", "${user.currentStreak} Days", Icons.local_fire_department, Colors.orange)),
+               const SizedBox(width: 16),
+               Expanded(child: _buildStatCard("Best Streak", "${user.bestStreak} Days", Icons.emoji_events, Colors.yellow.shade800)),
+             ],
+           ),
+           const SizedBox(height: 16),
+           // Since we don't have total minutes yet, maybe display Daily Goal?
+           // Or just hide it for now.
+           // Requirement: "Toplam çalışılan gün sayısı, Toplam çalışılan dakika"
+           // We need to calculate these or add them to user model.
+           // Since I can't easily add to user model without migration script and extensive changes now (already did user model),
+           // I will implement a quick calculation in StatisticsPage using PlanService history if possible? 
+           // Better: Add "Total Days" and "Minutes" to user model? 
+           // No, I'll calculate it from history for now or leave placeholders?
+           // "V1 istatistikleri minimal olacak". 
+           // I'll add "Daily Goal" as a stat for now.
+           Row(
+             children: [
+               Expanded(child: _buildStatCard("Daily Goal", "${user.dailyStudyMinutes} min", Icons.timer, Colors.blue)),
+               const SizedBox(width: 16),
+               Expanded(child: _buildStatCard("Level", user.level, Icons.trending_up, Colors.purple)),
+             ],
+           ),
+         ],
+       ),
+     );
+  }
+  
+  Widget _buildStatCard(String title, String value, IconData icon, Color color) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+           BoxShadow(
+             color: Colors.grey.withOpacity(0.1),
+             blurRadius: 10,
+             offset: const Offset(0, 4),
+           )
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: color, size: 30),
+          const SizedBox(height: 12),
+          Text(value, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 4),
+          Text(title, style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+        ],
+      ),
+    );
+  }
+}

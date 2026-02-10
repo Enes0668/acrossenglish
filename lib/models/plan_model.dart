@@ -79,16 +79,24 @@ class DailyTask {
     );
   }
 
-  DailyTask copyWith({bool? isCompleted}) {
+  DailyTask copyWith({
+    String? title,
+    String? description,
+    String? type,
+    String? category,
+    int? durationMinutes,
+    bool? isCompleted,
+    Map<String, String>? userContentData,
+  }) {
     return DailyTask(
       id: id,
-      title: title,
-      description: description,
-      type: type,
-      category: category,
-      durationMinutes: durationMinutes,
+      title: title ?? this.title,
+      description: description ?? this.description,
+      type: type ?? this.type,
+      category: category ?? this.category,
+      durationMinutes: durationMinutes ?? this.durationMinutes,
       isCompleted: isCompleted ?? this.isCompleted,
-      userContentData: userContentData,
+      userContentData: userContentData ?? this.userContentData,
     );
   }
 }

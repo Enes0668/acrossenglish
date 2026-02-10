@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
-import 'home_page.dart';
+import 'package:provider/provider.dart';
+import '../providers/settings_provider.dart';
+import 'main_screen.dart'; // Navigate to MainScreen, not just HomePage which is a sub-tab
 
 class DailyGoalPage extends StatefulWidget {
   const DailyGoalPage({super.key});
@@ -10,11 +12,11 @@ class DailyGoalPage extends StatefulWidget {
 }
 
 class _DailyGoalPageState extends State<DailyGoalPage> {
-  int? _selectedHours;
+  int? _selectedMinutes;
   bool _isLoading = false;
 
   void _saveGoal() async {
-    if (_selectedHours == null) return;
+    if (_selectedMinutes == null) return;
 
     setState(() {
       _isLoading = true;
@@ -23,10 +25,14 @@ class _DailyGoalPageState extends State<DailyGoalPage> {
     try {
       final user = AuthService().currentUser;
       if (user != null) {
-        await AuthService().updateDailyStudyGoal(user.id, _selectedHours!);
+        await AuthService().updateDailyStudyMinutes(user.id, _selectedMinutes!);
+        
         if (mounted) {
+           // Update local provider to avoid mismatch loop on Home Page
+           Provider.of<SettingsProvider>(context, listen: false).setDailyGoal(_selectedMinutes!);
+
            Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (context) => const HomePage()),
+            MaterialPageRoute(builder: (context) => const MainScreen()),
           );
         }
       }
@@ -74,7 +80,7 @@ class _DailyGoalPageState extends State<DailyGoalPage> {
                 ),
                 const SizedBox(height: 10),
                 const Text(
-                  'How many hours would you like to dedicate to learning English each day?',
+                  'How much time would you like to dedicate to learning English each day?',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 16,
@@ -82,52 +88,55 @@ class _DailyGoalPageState extends State<DailyGoalPage> {
                   ),
                 ),
                 const SizedBox(height: 40),
-                ...[1, 2, 3, 4].map((hours) => Padding(
-                      padding: const EdgeInsets.only(bottom: 16.0),
-                      child: GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            _selectedHours = hours;
-                          });
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 20),
-                          decoration: BoxDecoration(
-                            color: _selectedHours == hours
-                                ? Colors.white
-                                : Colors.white.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(15),
-                            border: Border.all(
-                              color: Colors.white.withOpacity(0.5),
-                              width: 1,
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                '$hours Hour${hours > 1 ? 's' : ''}',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                  color: _selectedHours == hours
-                                      ? Colors.deepPurple
-                                      : Colors.white,
+                Expanded(
+                  child: ListView(
+                    children: [30, 45, 60, 90, 120].map((minutes) => Padding(
+                          padding: const EdgeInsets.only(bottom: 16.0),
+                          child: GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                _selectedMinutes = minutes;
+                              });
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 20),
+                              decoration: BoxDecoration(
+                                color: _selectedMinutes == minutes
+                                    ? Colors.white
+                                    : Colors.white.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(15),
+                                border: Border.all(
+                                  color: Colors.white.withOpacity(0.5),
+                                  width: 1,
                                 ),
                               ),
-                              if (_selectedHours == hours)
-                                const Icon(
-                                  Icons.check_circle,
-                                  color: Colors.deepPurple,
-                                ),
-                            ],
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    '$minutes Minutes',
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                      color: _selectedMinutes == minutes
+                                          ? Colors.deepPurple
+                                          : Colors.white,
+                                    ),
+                                  ),
+                                  if (_selectedMinutes == minutes)
+                                    const Icon(
+                                      Icons.check_circle,
+                                      color: Colors.deepPurple,
+                                    ),
+                                ],
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
-                    )),
-                const Spacer(),
+                        )).toList(),
+                  ),
+                ),
                 ElevatedButton(
-                  onPressed: _selectedHours != null && !_isLoading ? _saveGoal : null,
+                  onPressed: _selectedMinutes != null && !_isLoading ? _saveGoal : null,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.amber,
                     foregroundColor: Colors.black87,

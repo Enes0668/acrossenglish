@@ -39,13 +39,13 @@ class SettingsPage extends StatelessWidget {
               _buildSectionHeader('Study Goals'),
               ListTile(
                 title: const Text('Daily Study Goal'),
-                subtitle: Text('${settings.dailyGoalHours} hours per day'),
+                subtitle: Text('${settings.dailyGoalMinutes} minutes per day'),
                 trailing: DropdownButton<int>(
-                  value: settings.dailyGoalHours,
-                  items: [1, 2, 3, 4].map((int value) {
+                  value: settings.dailyGoalMinutes,
+                  items: [30, 45, 60, 90, 120].map((int value) {
                     return DropdownMenuItem<int>(
                       value: value,
-                      child: Text('$value h'),
+                      child: Text('$value min'),
                     );
                   }).toList(),
                   onChanged: (int? newValue) async {
@@ -54,7 +54,7 @@ class SettingsPage extends StatelessWidget {
                       // Sync with Firestore
                       final user = AuthService().currentUser;
                       if (user != null) {
-                        await AuthService().updateDailyStudyGoal(user.id, newValue);
+                        await AuthService().updateDailyStudyMinutes(user.id, newValue);
                       }
                     }
                   },

@@ -8,7 +8,11 @@ class UserModel {
   final String dailyTime;
   final String level;
   final String levelScore;
-  final int dailyStudyGoal;
+  final int dailyStudyMinutes;
+  final int currentStreak;
+  final int bestStreak;
+  final String lastCompletedDate;
+  final List<String> completedContentIds;
 
   UserModel({
     required this.id,
@@ -20,11 +24,30 @@ class UserModel {
     required this.dailyTime,
     required this.level,
     required this.levelScore,
-    this.dailyStudyGoal = 0,
+    this.dailyStudyMinutes = 30,
+    this.currentStreak = 0,
+    this.bestStreak = 0,
+    this.lastCompletedDate = '',
+    this.completedContentIds = const [],
   });
 
   // Factory method to create a UserModel from a Map (Firestore data)
   factory UserModel.fromMap(Map<String, dynamic> data, String documentId) {
+    // Handle migration from dailyStudyGoal (hours) to dailyStudyMinutes
+    int minutes = 30;
+    if (data.containsKey('dailyStudyMinutes')) {
+      minutes = (data['dailyStudyMinutes'] ?? 30) as int;
+    } else if (data.containsKey('dailyStudyGoal')) {
+      // Assuming old goal was hours, convert to minutes. 
+      // Safely handle if it was stored as int or string
+      var oldGoal = data['dailyStudyGoal'];
+      if (oldGoal is int) {
+         minutes = oldGoal * 60;
+      } else if (oldGoal is String) {
+         minutes = (int.tryParse(oldGoal) ?? 1) * 60;
+      }
+    }
+
     return UserModel(
       id: documentId,
       email: data['email'] ?? '',
@@ -33,9 +56,13 @@ class UserModel {
       createdAt: data['createdAt'] ?? '',
       lastLogin: data['lastLogin'] ?? '',
       dailyTime: data['dailyTime'] ?? '0',
-      level: data['level'] ?? '1',
+      level: data['level'] ?? 'Beginner',
       levelScore: data['levelScore'] ?? '0',
-      dailyStudyGoal: (data['dailyStudyGoal'] ?? 0) as int,
+      dailyStudyMinutes: minutes,
+      currentStreak: (data['currentStreak'] ?? 0) as int,
+      bestStreak: (data['bestStreak'] ?? 0) as int,
+      lastCompletedDate: data['lastCompletedDate'] ?? '',
+      completedContentIds: List<String>.from(data['completedContentIds'] ?? []),
     );
   }
 
@@ -50,7 +77,11 @@ class UserModel {
       'dailyTime': dailyTime,
       'level': level,
       'levelScore': levelScore,
-      'dailyStudyGoal': dailyStudyGoal,
+      'dailyStudyMinutes': dailyStudyMinutes,
+      'currentStreak': currentStreak,
+      'bestStreak': bestStreak,
+      'lastCompletedDate': lastCompletedDate,
+      'completedContentIds': completedContentIds,
     };
   }
 }

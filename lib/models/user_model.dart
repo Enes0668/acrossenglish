@@ -13,6 +13,8 @@ class UserModel {
   final int bestStreak;
   final String lastCompletedDate;
   final List<String> completedContentIds;
+  final String notificationTime;
+  final bool isNotificationsEnabled;
 
   UserModel({
     required this.id,
@@ -29,6 +31,8 @@ class UserModel {
     this.bestStreak = 0,
     this.lastCompletedDate = '',
     this.completedContentIds = const [],
+    this.notificationTime = '',
+    this.isNotificationsEnabled = true,
   });
 
   // Factory method to create a UserModel from a Map (Firestore data)
@@ -63,6 +67,8 @@ class UserModel {
       bestStreak: (data['bestStreak'] ?? 0) as int,
       lastCompletedDate: data['lastCompletedDate'] ?? '',
       completedContentIds: List<String>.from(data['completedContentIds'] ?? []),
+      notificationTime: data['notificationTime'] ?? '',
+      isNotificationsEnabled: data['isNotificationsEnabled'] ?? true,
     );
   }
 
@@ -82,6 +88,8 @@ class UserModel {
       'bestStreak': bestStreak,
       'lastCompletedDate': lastCompletedDate,
       'completedContentIds': completedContentIds,
+      'notificationTime': notificationTime,
+      'isNotificationsEnabled': isNotificationsEnabled,
     };
   }
 }

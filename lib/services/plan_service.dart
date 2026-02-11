@@ -101,6 +101,22 @@ class PlanService {
       return mergedPlan;
   }
   
+  Future<void> updateDailyPlan(String userId, DailyPlan plan) async {
+    final planRef = _firestore
+        .collection('users')
+        .doc(userId)
+        .collection('daily_plans')
+        .doc(plan.date);
+
+    await planRef.set(plan.toMap());
+
+    // Check for Streak Increment if all tasks are completed
+    bool allCompleted = plan.tasks.every((t) => t.isCompleted);
+    if (allCompleted) {
+      await _updateStreak(userId, plan.date);
+    }
+  }
+
   Future<void> updateTaskStatus(String userId, String date, String taskId, bool isCompleted) async {
      final planRef = _firestore
         .collection('users')

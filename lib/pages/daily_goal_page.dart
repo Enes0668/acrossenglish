@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 import 'package:provider/provider.dart';
 import '../providers/settings_provider.dart';
-import 'main_screen.dart'; // Navigate to MainScreen, not just HomePage which is a sub-tab
+import 'main_screen.dart'; 
+import 'notification_setup_page.dart';
 
 class DailyGoalPage extends StatefulWidget {
   const DailyGoalPage({super.key});
@@ -32,7 +33,7 @@ class _DailyGoalPageState extends State<DailyGoalPage> {
            Provider.of<SettingsProvider>(context, listen: false).setDailyGoal(_selectedMinutes!);
 
            Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (context) => const MainScreen()),
+            MaterialPageRoute(builder: (context) => const NotificationSetupPage()),
           );
         }
       }

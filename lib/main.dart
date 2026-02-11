@@ -12,11 +12,17 @@ import 'providers/theme_provider.dart';
 import 'providers/settings_provider.dart';
 import 'providers/content_provider.dart';
 
+import 'services/notification_service.dart';
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+  
+  // Initialize Notification Service
+  await NotificationService().init();
+
   runApp(
     MultiProvider(
       providers: [

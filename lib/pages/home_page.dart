@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:confetti/confetti.dart';
@@ -31,6 +32,7 @@ class _HomePageState extends State<HomePage> {
   
   @override
   void dispose() {
+    _debounceTimer?.cancel();
     _confettiController.dispose();
     super.dispose();
   }
@@ -66,13 +68,15 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  Timer? _debounceTimer;
+
   Future<void> _toggleTaskCompletion(DailyTask task, bool? value) async {
     if (_dailyPlan == null || value == null) return;
 
     final user = AuthService().currentUser;
     if (user == null) return;
 
-    // Optimistic update
+    // 1. Optimistic update (UI updates immediately)
     setState(() {
       final tasks = _dailyPlan!.tasks.map((t) {
         if (t.id == task.id) {
@@ -81,17 +85,31 @@ class _HomePageState extends State<HomePage> {
         return t;
       }).toList();
       
+      // Recalculate completed duration for local state
+      int completedMinutes = 0;
+      for (var t in tasks) {
+        if (t.isCompleted) completedMinutes += t.durationMinutes;
+      }
+
       _dailyPlan = DailyPlan(
         date: _dailyPlan!.date,
         tasks: tasks,
         totalDurationMinutes: _dailyPlan!.totalDurationMinutes,
-        completedDurationMinutes: _dailyPlan!.completedDurationMinutes, 
+        completedDurationMinutes: completedMinutes, 
       );
     });
 
-    await _planService.updateTaskStatus(user.id, _dailyPlan!.date, task.id, value);
+    // 2. Cancellation of previous timer (Debounce)
+    if (_debounceTimer?.isActive ?? false) _debounceTimer!.cancel();
+
+    // 3. Start new timer to sync with DB
+    _debounceTimer = Timer(const Duration(seconds: 2), () async {
+       if (_dailyPlan != null) {
+          await _planService.updateDailyPlan(user.id, _dailyPlan!);
+       }
+    });
     
-    // Check for celebration
+    // Check for celebration (Immediate UI feedback)
     if (_dailyPlan!.tasks.every((t) => t.isCompleted)) {
       _confettiController.play();
       _showCelebrationDialog();
@@ -145,43 +163,51 @@ class _HomePageState extends State<HomePage> {
             }
         }
       
-        return Stack(
-          alignment: Alignment.topCenter,
-          children: [
-            Scaffold(
-              appBar: AppBar(
-                title: const Text('Across English'),
-                automaticallyImplyLeading: false, 
-                actions: [
-                  IconButton(
-                    icon: const Icon(Icons.logout),
-                    onPressed: () async {
-                      await AuthService().signOut();
-                    },
+        return StreamBuilder<UserModel?>(
+          stream: AuthService().authStateChanges,
+          initialData: AuthService().currentUser,
+          builder: (context, snapshot) {
+            final user = snapshot.data;
+            
+            return Stack(
+              alignment: Alignment.topCenter,
+              children: [
+                Scaffold(
+                  appBar: AppBar(
+                    title: const Text('Across English'),
+                    automaticallyImplyLeading: false, 
+                    actions: [
+                      IconButton(
+                        icon: const Icon(Icons.logout),
+                        onPressed: () async {
+                          await AuthService().signOut();
+                        },
+                      ),
+                    ],
                   ),
-                ],
-              ),
-              body: SingleChildScrollView(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildHeader(user),
-                    const SizedBox(height: 20),
-                    _buildStreakSection(user),
-                    const SizedBox(height: 30),
-                    _buildDailyPlanSection(),
-                  ],
+                  body: SingleChildScrollView(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildHeader(user),
+                        const SizedBox(height: 20),
+                        _buildStreakSection(user),
+                        const SizedBox(height: 30),
+                        _buildDailyPlanSection(),
+                      ],
+                    ),
+                  ),
                 ),
-              ),
-            ),
-            ConfettiWidget(
-              confettiController: _confettiController,
-              blastDirectionality: BlastDirectionality.explosive,
-              shouldLoop: false, 
-              colors: const [Colors.green, Colors.blue, Colors.pink, Colors.orange, Colors.purple],
-            ),
-          ],
+                ConfettiWidget(
+                  confettiController: _confettiController,
+                  blastDirectionality: BlastDirectionality.explosive,
+                  shouldLoop: false, 
+                  colors: const [Colors.green, Colors.blue, Colors.pink, Colors.orange, Colors.purple],
+                ),
+              ],
+            );
+          }
         );
       }
     );
@@ -205,7 +231,7 @@ class _HomePageState extends State<HomePage> {
               user?.level ?? "Beginner",
               style: TextStyle(
                 fontSize: 16,
-                color: Colors.grey[600],
+                color: Theme.of(context).brightness == Brightness.dark ? Colors.white70 : Colors.grey[600],
               ),
             ),
           ],
@@ -222,8 +248,8 @@ class _HomePageState extends State<HomePage> {
                const SizedBox(width: 4),
                Text(
                  '${user?.dailyStudyMinutes ?? 30} min Goal',
-                 style: const TextStyle(
-                   color: Colors.deepPurple,
+                 style: TextStyle(
+                   color: Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.deepPurple,
                    fontWeight: FontWeight.bold
                  ),
                ),
@@ -316,6 +342,7 @@ class _HomePageState extends State<HomePage> {
 
     int completedCount = _dailyPlan!.tasks.where((t) => t.isCompleted).length;
     double progress = _dailyPlan!.tasks.isEmpty ? 0 : completedCount / _dailyPlan!.tasks.length;
+    bool isAllCompleted = progress == 1.0;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -330,19 +357,56 @@ class _HomePageState extends State<HomePage> {
                 fontWeight: FontWeight.bold,
               ),
             ),
-            Text(
-              "${(progress * 100).toInt()}% Done",
-               style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-                color: Colors.deepPurple
-              ),
-            )
+            if (isAllCompleted)
+              const Text(
+                "Completed! 🎉",
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.green
+                ),
+              )
+            else
+              Text(
+                "${(progress * 100).toInt()}% Done",
+                 style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.deepPurple
+                ),
+              )
           ],
         ),
         const SizedBox(height: 8),
-        LinearProgressIndicator(value: progress, backgroundColor: Colors.grey[200], borderRadius: BorderRadius.circular(4),),
+        LinearProgressIndicator(
+          value: progress, 
+          backgroundColor: Colors.grey[200], 
+          borderRadius: BorderRadius.circular(4),
+          color: isAllCompleted ? Colors.green : null,
+        ),
         const SizedBox(height: 16),
+        if (isAllCompleted)
+          Container(
+            padding: const EdgeInsets.all(12),
+            margin: const EdgeInsets.only(bottom: 16),
+            decoration: BoxDecoration(
+              color: Colors.green.shade50,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.green.shade200),
+            ),
+            child: Row(
+              children: const [
+                 Icon(Icons.check_circle, color: Colors.green),
+                 SizedBox(width: 12),
+                 Expanded(
+                   child: Text(
+                     "Daily Plan Completed! Great Job keeping up with your studies.",
+                     style: TextStyle(color: Colors.green, fontWeight: FontWeight.w600),
+                   )
+                 )
+              ],
+            ),
+          ),
         ListView.separated(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
@@ -370,7 +434,9 @@ class _HomePageState extends State<HomePage> {
                   ),
                 ),
                 value: task.isCompleted,
-                onChanged: (val) => _toggleTaskCompletion(task, val),
+                onChanged: task.isCompleted 
+                  ? null // Disable if already completed
+                  : (val) => _toggleTaskCompletion(task, val),
                 secondary: Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(

@@ -27,7 +27,7 @@ class StatisticsPage extends StatelessWidget {
         child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-               if (user != null) _buildSummaryCards(user),
+               if (user != null) _buildSummaryCards(context, user),
                const SizedBox(height: 20),
                const Padding(
                  padding: EdgeInsets.symmetric(horizontal: 16.0),
@@ -47,16 +47,16 @@ class StatisticsPage extends StatelessWidget {
     );
   }
 
-  Widget _buildSummaryCards(UserModel user) {
+  Widget _buildSummaryCards(BuildContext context, UserModel user) {
      return Padding(
        padding: const EdgeInsets.all(16.0),
        child: Column(
          children: [
            Row(
              children: [
-               Expanded(child: _buildStatCard("Current Streak", "${user.currentStreak} Days", Icons.local_fire_department, Colors.orange)),
+               Expanded(child: _buildStatCard(context, "Current Streak", "${user.currentStreak} Days", Icons.local_fire_department, Colors.orange)),
                const SizedBox(width: 16),
-               Expanded(child: _buildStatCard("Best Streak", "${user.bestStreak} Days", Icons.emoji_events, Colors.yellow.shade800)),
+               Expanded(child: _buildStatCard(context, "Best Streak", "${user.bestStreak} Days", Icons.emoji_events, Colors.yellow.shade800)),
              ],
            ),
            const SizedBox(height: 16),
@@ -72,9 +72,9 @@ class StatisticsPage extends StatelessWidget {
            // I'll add "Daily Goal" as a stat for now.
            Row(
              children: [
-               Expanded(child: _buildStatCard("Daily Goal", "${user.dailyStudyMinutes} min", Icons.timer, Colors.blue)),
+               Expanded(child: _buildStatCard(context, "Daily Goal", "${user.dailyStudyMinutes} min", Icons.timer, Colors.blue)),
                const SizedBox(width: 16),
-               Expanded(child: _buildStatCard("Level", user.level, Icons.trending_up, Colors.purple)),
+               Expanded(child: _buildStatCard(context, "Level", user.level, Icons.trending_up, Colors.purple)),
              ],
            ),
          ],
@@ -82,15 +82,15 @@ class StatisticsPage extends StatelessWidget {
      );
   }
   
-  Widget _buildStatCard(String title, String value, IconData icon, Color color) {
+  Widget _buildStatCard(BuildContext context, String title, String value, IconData icon, Color color) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
            BoxShadow(
-             color: Colors.grey.withOpacity(0.1),
+             color: Colors.black.withOpacity(0.1),
              blurRadius: 10,
              offset: const Offset(0, 4),
            )

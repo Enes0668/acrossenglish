@@ -17,30 +17,7 @@ class HistoryPage extends StatelessWidget {
       appBar: AppBar(
         title: const Text('Activity History'),
       ),
-      body: DefaultTabController(
-        length: 2,
-        child: Column(
-          children: [
-            const TabBar(
-              tabs: [
-                Tab(text: 'Daily Activity'),
-                Tab(text: 'Completed Content'),
-              ],
-            ),
-            Expanded(
-              child: TabBarView(
-                children: [
-                  // Daily Activity Tab
-                  _buildDailyActivityTab(user?.id),
-                  
-                  // Completed Content Tab
-                  _buildCompletedContentTab(),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
+      body: _buildDailyActivityTab(user?.id),
     );
   }
 
@@ -98,37 +75,5 @@ class HistoryPage extends StatelessWidget {
     );
   }
 
-  Widget _buildCompletedContentTab() {
-    return Consumer<ContentProvider>(
-      builder: (context, contentProvider, child) {
-        final completedContent = contentProvider.contents.where((c) => c.isCompleted).toList();
-        
-        if (completedContent.isEmpty) {
-          return const Center(child: Text('No content completed yet.'));
-        }
 
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: completedContent.length,
-          itemBuilder: (context, index) {
-            final content = completedContent[index];
-            return Card(
-              margin: const EdgeInsets.only(bottom: 8),
-              child: ListTile(
-                leading: Container(
-                    width: 40,
-                    height: 60,
-                    color: Colors.grey[200],
-                    child: const Icon(Icons.book, color: Colors.grey),
-                  ),
-                title: Text(content.title),
-                subtitle: Text('${content.type.toUpperCase()} • ${content.level}'),
-                trailing: const Icon(Icons.check_circle, color: Colors.green),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
 }

@@ -31,6 +31,7 @@ class AuthService {
       if (user == null) {
         _currentUser = null;
         _userController.add(null);
+        _cancelUserSubscription();
       } else {
         // Reload user to get the latest emailVerified status
         await user.reload();
@@ -38,27 +39,39 @@ class AuthService {
         if (!user.emailVerified) {
              _currentUser = null;
              _userController.add(null);
+             _cancelUserSubscription();
              return;
         }
 
-        // Fetch user data from Firestore
-        await _fetchAndEmitUserData(user.uid);
+        // Listen to user data from Firestore
+        _listenToUserData(user.uid);
       }
     });
   }
 
-  // Helper to fetch and emit
-  Future<void> _fetchAndEmitUserData(String uid) async {
-    try {
-      final docSnapshot = await _firestore.collection('users').doc(uid).get();
-      if (docSnapshot.exists) {
-        _currentUser = UserModel.fromMap(docSnapshot.data()!, uid);
-        _userController.add(_currentUser);
-      }
-    } catch (e) {
-      debugPrint("Error fetching user data: $e");
-      _userController.addError(e);
-    }
+  StreamSubscription<DocumentSnapshot>? _userSubscription;
+
+  // Helper to listen to user data changes in real-time
+  void _listenToUserData(String uid) {
+    _userSubscription?.cancel();
+    _userSubscription = _firestore.collection('users').doc(uid).snapshots().listen(
+      (docSnapshot) {
+        if (docSnapshot.exists && docSnapshot.data() != null) {
+          _currentUser = UserModel.fromMap(docSnapshot.data()!, uid);
+          _userController.add(_currentUser);
+        }
+      },
+      onError: (e) {
+        debugPrint("Error listening to user data: $e");
+        _userController.addError(e);
+      },
+    );
+  }
+
+  // Cancel subscription on sign out
+  void _cancelUserSubscription() {
+    _userSubscription?.cancel();
+    _userSubscription = null;
   }
 
   // Sign in with email and password
@@ -87,7 +100,11 @@ class AuthService {
           'lastLogin': DateTime.now().toIso8601String(),
          });
          
-         // Fetch explicitly to return the User object
+         // Fetch explicitly to return the User object (or wait for stream)
+         // But for immediate return, we can do a quick get, OR just start listening.
+         // Let's start listening, and also do a get to return a value immediately for this Future.
+         _listenToUserData(user.uid);
+         
          final docSnapshot = await _firestore.collection('users').doc(user.uid).get();
          if (docSnapshot.exists) {
            _currentUser = UserModel.fromMap(docSnapshot.data()!, user.uid);
@@ -130,6 +147,8 @@ class AuthService {
           'currentStreak': 0,
           'bestStreak': 0,
           'lastCompletedDate': '',
+          'notificationTime': '', // Not set initially
+          'isNotificationsEnabled': true,
         };
 
         // Use uid as document ID
@@ -161,8 +180,7 @@ class AuthService {
 
       if(data.isNotEmpty) {
           await _firestore.collection('users').doc(uid).update(data);
-          // Refresh local user data
-          await _fetchAndEmitUserData(uid);
+          // Local data will be refreshed via the stream listener automatically
       }
     } catch (e) {
       debugPrint("Error updating user progress: $e");
@@ -176,9 +194,21 @@ class AuthService {
       await _firestore.collection('users').doc(uid).update({
         'dailyStudyMinutes': minutes,
       });
-      // Refresh local user data
-      await _fetchAndEmitUserData(uid);
+      // Local data will be refreshed via the stream listener automatically
     } catch (e) {
+      rethrow;
+    }
+  }
+
+  // Update notification preferences
+  Future<void> updateNotificationPreferences(String uid, {required String time, required bool enabled}) async {
+    try {
+      await _firestore.collection('users').doc(uid).update({
+        'notificationTime': time,
+        'isNotificationsEnabled': enabled,
+      });
+    } catch (e) {
+      debugPrint("Error updating notification preferences: $e");
       rethrow;
     }
   }

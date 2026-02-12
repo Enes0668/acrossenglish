@@ -12,20 +12,14 @@ class HistoryPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final user = AuthService().currentUser;
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Activity History'),
-      ),
-      body: _buildDailyActivityTab(user?.id),
-    );
+    return _buildDailyActivityTab(user?.id);
   }
 
   Widget _buildDailyActivityTab(String? userId) {
     if (userId == null) return const Center(child: Text("Please login first."));
 
-    return FutureBuilder<List<DailyPlan>>(
-      future: PlanService().getCompletedTasksHistory(userId),
+    return StreamBuilder<List<DailyPlan>>(
+      stream: PlanService().getCompletedTasksHistoryStream(userId),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
@@ -42,6 +36,8 @@ class HistoryPage extends StatelessWidget {
         }
 
         return ListView.separated(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
           padding: const EdgeInsets.all(16),
           itemCount: history.length,
           separatorBuilder: (context, index) => const Divider(),
@@ -61,7 +57,7 @@ class HistoryPage extends StatelessWidget {
             return ExpansionTile(
               leading: const Icon(Icons.check_circle, color: Colors.deepPurple),
               title: Text(DateFormat.yMMMMEEEEd().format(DateTime.parse(plan.date))),
-              subtitle: Text('${completedTasks.length}/${plan.tasks.length} tasks completed'),
+              subtitle: Text('${completedTasks.length}/${plan.tasks.length} tasks completed (${plan.completedDurationMinutes} min)'),
               children: completedTasks.map((task) => ListTile(
                 title: Text(task.title),
                 subtitle: Text(task.category),

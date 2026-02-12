@@ -2,6 +2,8 @@ import 'package:acrossenglish/pages/history_page.dart';
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 import '../models/user_model.dart';
+import '../models/plan_model.dart';
+import '../services/plan_service.dart';
 
 class StatisticsPage extends StatelessWidget {
   const StatisticsPage({super.key});
@@ -37,10 +39,7 @@ class StatisticsPage extends StatelessWidget {
                  ),
                ),
                const SizedBox(height: 10),
-               const SizedBox(
-                 height: 400, // Fixed height for history list
-                 child: HistoryPage(),
-               )
+               const HistoryPage(),
             ],
         ),
       )
@@ -48,37 +47,48 @@ class StatisticsPage extends StatelessWidget {
   }
 
   Widget _buildSummaryCards(BuildContext context, UserModel user) {
-     return Padding(
-       padding: const EdgeInsets.all(16.0),
-       child: Column(
-         children: [
-           Row(
+     return StreamBuilder<List<DailyPlan>>(
+       stream: PlanService().getCompletedTasksHistoryStream(user.id),
+       builder: (context, snapshot) {
+         int todayMinutes = 0;
+         int dailyGoal = user.dailyStudyMinutes;
+         
+         if (snapshot.hasData) {
+            final nowStr = DateTime.now().toIso8601String().split('T').first;
+            final todayPlan = snapshot.data!.firstWhere(
+              (p) => p.date == nowStr, 
+              orElse: () => DailyPlan(date: nowStr, tasks: [], totalDurationMinutes: 0, completedDurationMinutes: 0)
+            );
+            todayMinutes = todayPlan.completedDurationMinutes;
+            // Use plan's target if available and greater than 0, otherwise user's setting
+            if (todayPlan.totalDurationMinutes > 0) {
+               dailyGoal = todayPlan.totalDurationMinutes;
+            }
+         }
+
+         return Padding(
+           padding: const EdgeInsets.all(16.0),
+           child: Column(
              children: [
-               Expanded(child: _buildStatCard(context, "Current Streak", "${user.currentStreak} Days", Icons.local_fire_department, Colors.orange)),
-               const SizedBox(width: 16),
-               Expanded(child: _buildStatCard(context, "Best Streak", "${user.bestStreak} Days", Icons.emoji_events, Colors.yellow.shade800)),
+               Row(
+                 children: [
+                   Expanded(child: _buildStatCard(context, "Current Streak", "${user.currentStreak} Days", Icons.local_fire_department, Colors.orange)),
+                   const SizedBox(width: 16),
+                   Expanded(child: _buildStatCard(context, "Best Streak", "${user.bestStreak} Days", Icons.emoji_events, Colors.yellow.shade800)),
+                 ],
+               ),
+               const SizedBox(height: 16),
+               Row(
+                 children: [
+                   Expanded(child: _buildStatCard(context, "Today's Progress", "$todayMinutes / $dailyGoal min", Icons.timer, Colors.blue)),
+                   const SizedBox(width: 16),
+                   Expanded(child: _buildStatCard(context, "Level", user.level, Icons.trending_up, Colors.purple)),
+                 ],
+               ),
              ],
            ),
-           const SizedBox(height: 16),
-           // Since we don't have total minutes yet, maybe display Daily Goal?
-           // Or just hide it for now.
-           // Requirement: "Toplam çalışılan gün sayısı, Toplam çalışılan dakika"
-           // We need to calculate these or add them to user model.
-           // Since I can't easily add to user model without migration script and extensive changes now (already did user model),
-           // I will implement a quick calculation in StatisticsPage using PlanService history if possible? 
-           // Better: Add "Total Days" and "Minutes" to user model? 
-           // No, I'll calculate it from history for now or leave placeholders?
-           // "V1 istatistikleri minimal olacak". 
-           // I'll add "Daily Goal" as a stat for now.
-           Row(
-             children: [
-               Expanded(child: _buildStatCard(context, "Daily Goal", "${user.dailyStudyMinutes} min", Icons.timer, Colors.blue)),
-               const SizedBox(width: 16),
-               Expanded(child: _buildStatCard(context, "Level", user.level, Icons.trending_up, Colors.purple)),
-             ],
-           ),
-         ],
-       ),
+         );
+       }
      );
   }
   

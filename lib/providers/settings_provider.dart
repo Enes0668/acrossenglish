@@ -85,7 +85,7 @@ class SettingsProvider with ChangeNotifier {
         NotificationService().scheduleDailyNotification(
             id: 0, 
             title: "Time to Study!", 
-            body: "Keep up your streak! It's time for your daily English practice.", 
+            body: "Keep up your streak! It's English time!", 
             hour: hour, 
             minute: minute
         );

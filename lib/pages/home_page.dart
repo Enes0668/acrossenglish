@@ -26,6 +26,12 @@ class _HomePageState extends State<HomePage> {
     super.initState();
     _confettiController = ConfettiController(duration: const Duration(seconds: 3));
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Sync local settings with user data ONCE on mount
+      final user = AuthService().currentUser;
+      final settingsProvider = Provider.of<SettingsProvider>(context, listen: false);
+      if (user != null && settingsProvider.dailyGoalMinutes != user.dailyStudyMinutes) {
+          settingsProvider.setDailyGoal(user.dailyStudyMinutes);
+      }
       _loadDailyPlan();
     });
   }
@@ -42,18 +48,15 @@ class _HomePageState extends State<HomePage> {
     final settingsProvider = Provider.of<SettingsProvider>(context, listen: false);
 
     if (user != null) {
-      // Sync local settings if needed
-      if (settingsProvider.dailyGoalMinutes != user.dailyStudyMinutes) {
-          // Update provider to match Firestore user data (Source of Truth)
-          // We do this in post frame callback to avoid build conflicts if needed, 
-          // or just call setDailyGoal (which notifies listeners).
-          // Since we are in an async method _loadDailyPlan, we can call it.
-          settingsProvider.setDailyGoal(user.dailyStudyMinutes);
-      }
 
       try {
         // Pass empty list since we don't use library content generation anymore
-        final plan = await _planService.getOrGenerateDailyPlan(user, []);
+        // Pass current settings value to ensure immediate update even if Firestore is slow
+        final plan = await _planService.getOrGenerateDailyPlan(
+          user, 
+          [], 
+          targetMinutes: settingsProvider.dailyGoalMinutes
+        );
         
         if (mounted) {
           setState(() {
@@ -103,9 +106,9 @@ class _HomePageState extends State<HomePage> {
     if (_debounceTimer?.isActive ?? false) _debounceTimer!.cancel();
 
     // 3. Start new timer to sync with DB
-    _debounceTimer = Timer(const Duration(seconds: 2), () async {
+    _debounceTimer = Timer(const Duration(milliseconds: 500), () async {
        if (_dailyPlan != null) {
-          await _planService.updateDailyPlan(user.id, _dailyPlan!);
+          await _planService.updateDailyPlan(user, _dailyPlan!);
        }
     });
     

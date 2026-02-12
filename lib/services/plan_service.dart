@@ -9,7 +9,7 @@ class PlanService {
 
   // --- Generation Logic ---
 
-  Future<DailyPlan> getOrGenerateDailyPlan(UserModel user, List<ContentModel> libraryContents) async {
+  Future<DailyPlan> getOrGenerateDailyPlan(UserModel user, List<ContentModel> libraryContents, {int? targetMinutes}) async {
     final today = DateTime.now().toIso8601String().split('T').first; // YYYY-MM-DD
     final planRef = _firestore
         .collection('users')
@@ -25,16 +25,16 @@ class PlanService {
     if (doc.exists) {
       // Check if we need to update duration because of settings change
       DailyPlan existingPlan = DailyPlan.fromMap(doc.data()!);
-      int targetMinutes = user.dailyStudyMinutes > 0 ? user.dailyStudyMinutes : 30;
+      int finalTarget = targetMinutes ?? (user.dailyStudyMinutes > 0 ? user.dailyStudyMinutes : 30);
       
-      if (existingPlan.totalDurationMinutes != targetMinutes) {
-         return _updatePlanDuration(existingPlan, targetMinutes, user);
+      if (existingPlan.totalDurationMinutes != finalTarget) {
+          return _updatePlanDuration(existingPlan, finalTarget, user);
       }
       return existingPlan;
     }
 
     // Generate new plan
-    final plan = _generatePlan(user, today);
+    final plan = _generatePlan(user, today, targetMinutes: targetMinutes);
     
     // Save to Firestore
     await planRef.set(plan.toMap());
@@ -66,45 +66,17 @@ class PlanService {
   
   // Method to re-balance plan if settings change
   Future<DailyPlan> _updatePlanDuration(DailyPlan oldPlan, int newTotalMinutes, UserModel user) async {
-      // Regenerate plan structure
-      final newPlan = _generatePlan(user, oldPlan.date);
+      // Regenerate plan structure from scratch (Resetting progress)
+      final newPlan = _generatePlan(user, oldPlan.date, targetMinutes: newTotalMinutes);
       
-      // Attempt to preserve completion status if tasks match (by title/type)
-      List<DailyTask> mergedTasks = [];
-      
-      for (var newTask in newPlan.tasks) {
-        bool completed = false;
-        // Find matching task in old plan
-        for(var oldTask in oldPlan.tasks) {
-           if (oldTask.title == newTask.title && oldTask.isCompleted) {
-             completed = true;
-             break;
-           }
-        }
-        mergedTasks.add(newTask.copyWith(isCompleted: completed));
-      }
-      
-      final mergedPlan = DailyPlan(
-        date: newPlan.date,
-        tasks: mergedTasks,
-        totalDurationMinutes: newPlan.totalDurationMinutes,
-        completedDurationMinutes: mergedTasks.where((t) => t.isCompleted).fold(0, (sum, t) => sum + t.durationMinutes),
-      );
-
-       final planRef = _firestore
-        .collection('users')
-        .doc(user.id)
-        .collection('daily_plans')
-        .doc(oldPlan.date);
-        
-      await planRef.set(mergedPlan.toMap());
-      return mergedPlan;
+      await updateDailyPlan(user, newPlan);
+      return newPlan;
   }
   
-  Future<void> updateDailyPlan(String userId, DailyPlan plan) async {
+  Future<void> updateDailyPlan(UserModel user, DailyPlan plan) async {
     final planRef = _firestore
         .collection('users')
-        .doc(userId)
+        .doc(user.id)
         .collection('daily_plans')
         .doc(plan.date);
 
@@ -113,11 +85,17 @@ class PlanService {
     // Check for Streak Increment if all tasks are completed
     bool allCompleted = plan.tasks.every((t) => t.isCompleted);
     if (allCompleted) {
-      await _updateStreak(userId, plan.date);
+      await _updateStreak(user, plan.date);
     }
   }
 
+  // ... updateTaskStatus might still use ID if called from elsewhere, but we focused on updateDailyPlan for now.
+  // Actually, updateTaskStatus is not used in HomePage, _toggleTaskCompletion calls updateDailyPlan.
+  // So we only need to update updateDailyPlan.
+
   Future<void> updateTaskStatus(String userId, String date, String taskId, bool isCompleted) async {
+      // ... (This method seems unused by HomePage currently, usually HomePage manages state and saves whole plan)
+      // Leaving it as is for now or update it if needed.
      final planRef = _firestore
         .collection('users')
         .doc(userId)
@@ -160,15 +138,24 @@ class PlanService {
     
     // Check for Streak Increment
     if (allCompleted && isCompleted) {
-       await _updateStreak(userId, date);
+       // We don't have user object here easily without fetching. 
+       // Since this method is likely unused by HomePage loop, we can leave it triggering a fetch or update it later.
+       // But to be consistent, let's just fetch here or update signature if used.
+       // Based on HomePage code, it uses updateDailyPlan.
+       await _updateStreak(
+           await _getUser(userId), // Helper to get user
+           date
+       ); 
     }
   }
 
-  Future<void> _updateStreak(String userId, String today) async {
-    final userDoc = await _firestore.collection('users').doc(userId).get();
-    if (!userDoc.exists) return; 
-    
-    UserModel user = UserModel.fromMap(userDoc.data()!, userId);
+  Future<UserModel> _getUser(String userId) async {
+      final  doc = await _firestore.collection('users').doc(userId).get();
+      return UserModel.fromMap(doc.data()!, userId);
+  }
+
+  Future<void> _updateStreak(UserModel user, String today) async {
+    // No need to fetch user again!
     
     if (user.lastCompletedDate == today) {
       return;
@@ -181,8 +168,8 @@ class PlanService {
       newStreak = 1;
     } else {
       DateTime lastDate = DateTime.parse(user.lastCompletedDate);
-      DateTime nowDate = DateTime.parse(today);
-      int diff = nowDate.difference(lastDate).inDays;
+      DateTime now = DateTime.parse(today);
+      int diff = now.difference(lastDate).inDays;
       
       if (diff == 1) {
         newStreak += 1;
@@ -198,11 +185,24 @@ class PlanService {
       newBest = newStreak;
     }
     
-    await _firestore.collection('users').doc(userId).update({
+    await _firestore.collection('users').doc(user.id).update({
       'currentStreak': newStreak,
       'bestStreak': newBest,
       'lastCompletedDate': today,
     });
+  }
+
+  Stream<List<DailyPlan>> getCompletedTasksHistoryStream(String userId) {
+    return _firestore
+        .collection('users')
+        .doc(userId)
+        .collection('daily_plans')
+        .orderBy('date', descending: true)
+        .limit(30)
+        .snapshots()
+        .map((snapshot) => 
+          snapshot.docs.map((doc) => DailyPlan.fromMap(doc.data())).toList()
+        );
   }
 
   Future<List<DailyPlan>> getCompletedTasksHistory(String userId) async {
@@ -222,8 +222,8 @@ class PlanService {
     }
   }
 
-  DailyPlan _generatePlan(UserModel user, String date) {
-    int totalMinutes = user.dailyStudyMinutes > 0 ? user.dailyStudyMinutes : 30;
+  DailyPlan _generatePlan(UserModel user, String date, {int? targetMinutes}) {
+    int totalMinutes = targetMinutes ?? (user.dailyStudyMinutes > 0 ? user.dailyStudyMinutes : 30);
     
     String level = user.level; 
     double inputRatio = 0.65; // Default Intermediate

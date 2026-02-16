@@ -15,16 +15,22 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin {
   DailyPlan? _dailyPlan;
   bool _isLoadingPlan = true;
   final PlanService _planService = PlanService();
   late ConfettiController _confettiController;
+  late AnimationController _animationController;
 
   @override
   void initState() {
     super.initState();
     _confettiController = ConfettiController(duration: const Duration(seconds: 3));
+    _animationController = AnimationController(
+      vsync: this, 
+      duration: const Duration(milliseconds: 800)
+    )..forward();
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // Sync local settings with user data ONCE on mount
       final user = AuthService().currentUser;
@@ -40,6 +46,7 @@ class _HomePageState extends State<HomePage> {
   void dispose() {
     _debounceTimer?.cancel();
     _confettiController.dispose();
+    _animationController.dispose();
     super.dispose();
   }
 
@@ -50,8 +57,6 @@ class _HomePageState extends State<HomePage> {
     if (user != null) {
 
       try {
-        // Pass empty list since we don't use library content generation anymore
-        // Pass current settings value to ensure immediate update even if Firestore is slow
         final plan = await _planService.getOrGenerateDailyPlan(
           user, 
           [], 
@@ -122,36 +127,55 @@ class _HomePageState extends State<HomePage> {
   void _showCelebrationDialog() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('🎉 Congratulations!'),
-        content: const Text('You have completed your daily plan! Great job keeping up with your English studies.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Awesome!'),
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('🎉', style: TextStyle(fontSize: 60)),
+              const SizedBox(height: 16),
+              const Text(
+                'Congratulations!',
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+               'You have completed your daily plan! Great job keeping up with your English studies.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey, fontSize: 16),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Theme.of(context).primaryColor,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  ),
+                  child: const Text('Awesome!', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
 
-  String _getMotivationMessage(int streak) {
-    if (streak == 0) return "Let’s start your first day!";
-    if (streak == 1) return "Great start! Day 1 completed 🎉";
-    if (streak <= 3) return "Nice! You’re building a habit 🔥";
-    if (streak <= 6) return "Awesome! Almost a full week 👏";
-    if (streak == 7) return "1 WEEK STREAK! Amazing work! 🏆";
-    if (streak <= 13) return "Incredible consistency 💪";
-    if (streak == 14) return "TWO WEEKS STRAIGHT! 🚀";
-    if (streak <= 29) return "Impressive discipline!";
-    if (streak == 30) return "30 DAYS STREAK! LEGENDARY 🏅";
-    return "You’re unstoppable 🔥";
+  String _getGreeting() {
+    final hour = DateTime.now().hour;
+    if (hour < 12) return "Good Morning";
+    if (hour < 17) return "Good Afternoon";
+    return "Good Evening";
   }
 
   @override
   Widget build(BuildContext context) {
-    final user = AuthService().currentUser;
-    
     return Consumer<SettingsProvider>(
       builder: (context, settings, child) {
         if (_dailyPlan != null && !_isLoadingPlan) {
@@ -171,34 +195,46 @@ class _HomePageState extends State<HomePage> {
           initialData: AuthService().currentUser,
           builder: (context, snapshot) {
             final user = snapshot.data;
-            
+            final isDark = Theme.of(context).brightness == Brightness.dark;
+            final backgroundColor = isDark ? const Color(0xFF1A1A2E) : const Color(0xFFF8F9FD);
+
             return Stack(
               alignment: Alignment.topCenter,
               children: [
                 Scaffold(
+                  backgroundColor: backgroundColor,
                   appBar: AppBar(
-                    title: const Text('Across English'),
-                    automaticallyImplyLeading: false, 
-                    actions: [
-                      IconButton(
-                        icon: const Icon(Icons.logout),
-                        onPressed: () async {
-                          await AuthService().signOut();
-                        },
-                      ),
-                    ],
+                    backgroundColor: Colors.transparent,
+                    elevation: 0,
+                    toolbarHeight: 0, // Hide default appbar but keep status bar control
+                    bottom: PreferredSize(
+                      preferredSize: const Size.fromHeight(0), 
+                      child: Container(),
+                    ),
                   ),
-                  body: SingleChildScrollView(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildHeader(user),
-                        const SizedBox(height: 20),
-                        _buildStreakSection(user),
-                        const SizedBox(height: 30),
-                        _buildDailyPlanSection(),
-                      ],
+                  body: SafeArea(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
+                      child: FadeTransition(
+                        opacity: _animationController,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Header
+                            _buildModernHeader(user, isDark),
+                            const SizedBox(height: 30),
+                            
+                            // Streak Card
+                            _buildModernStreakCard(user, isDark),
+                            const SizedBox(height: 30),
+                            
+                            // Daily Plan
+                            _buildModernDailyPlanSection(isDark),
+                            
+                            const SizedBox(height: 20),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -216,135 +252,188 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildHeader(UserModel? user) {
+  Widget _buildModernHeader(UserModel? user, bool isDark) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Welcome, ${user?.username ?? "User"}!',
-              style: const TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            Text(
-              user?.level ?? "Beginner",
+              _getGreeting(),
               style: TextStyle(
                 fontSize: 16,
-                color: Theme.of(context).brightness == Brightness.dark ? Colors.white70 : Colors.grey[600],
+                color: isDark ? Colors.white60 : Colors.grey[600],
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              user?.username ?? "User",
+              style: TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white : const Color(0xFF2D3436),
+                letterSpacing: -0.5,
               ),
             ),
           ],
         ),
-         Container(
-           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-           decoration: BoxDecoration(
-             color: Colors.deepPurple.withOpacity(0.1),
-             borderRadius: BorderRadius.circular(20),
-           ),
-           child: Row(
-             children: [
-               const Icon(Icons.access_time, size: 16, color: Colors.deepPurple),
-               const SizedBox(width: 4),
-               Text(
-                 '${user?.dailyStudyMinutes ?? 30} min Goal',
-                 style: TextStyle(
-                   color: Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.deepPurple,
-                   fontWeight: FontWeight.bold
-                 ),
-               ),
-             ],
-           ),
-         )
+        Container(
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            color: isDark ? Colors.white10 : Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              if (!isDark)
+                BoxShadow(
+                  color: Colors.grey.withValues(alpha: 0.1),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                )
+            ],
+            border: Border.all(color: isDark ? Colors.white24 : Colors.grey[100]!),
+          ),
+          child: IconButton(
+            icon: Icon(Icons.logout_rounded, color: isDark ? Colors.white70 : Colors.grey[700]),
+            onPressed: () async => await AuthService().signOut(),
+            tooltip: 'Sign Out',
+          ),
+        ),
       ],
     );
   }
 
-  Widget _buildStreakSection(UserModel? user) {
+  Widget _buildModernStreakCard(UserModel? user, bool isDark) {
     int streak = user?.currentStreak ?? 0;
     int best = user?.bestStreak ?? 0;
     
     return Container(
-      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Colors.orange.shade100, Colors.orange.shade50],
+        gradient: const LinearGradient(
+          colors: [Color(0xFFFF9966), Color(0xFFFF5E62)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.orange.shade200),
-      ),
-      child: Column(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              Column(
-                children: [
-                   const Text("Current Streak", style: TextStyle(color: Colors.black54, fontSize: 12)),
-                   const SizedBox(height: 4),
-                   Row(
-                     children: [
-                       const Text("🔥", style: TextStyle(fontSize: 20)),
-                       const SizedBox(width: 6),
-                       Text(
-                         "$streak days", 
-                         style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 22, color: Colors.orange)
-                       ),
-                     ],
-                   )
-                ],
-              ),
-              Container(width: 1, height: 40, color: Colors.orange.shade200),
-              Column(
-                 children: [
-                   const Text("Best Streak", style: TextStyle(color: Colors.black54, fontSize: 12)),
-                   const SizedBox(height: 4),
-                   Row(
-                     children: [
-                       const Text("🏆", style: TextStyle(fontSize: 20)),
-                       const SizedBox(width: 6),
-                       Text(
-                         "$best days", 
-                         style: TextStyle(fontWeight: FontWeight.bold, fontSize: 22, color: Colors.orange.shade800)
-                       ),
-                     ],
-                   )
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Text(
-            _getMotivationMessage(streak),
-            style: TextStyle(
-              fontSize: 14,
-              fontStyle: FontStyle.italic,
-              color: Colors.orange.shade900,
-              fontWeight: FontWeight.w600
-            ),
-            textAlign: TextAlign.center,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFFFF5E62).withValues(alpha: 0.3),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
           ),
         ],
-      )
+      ),
+      child: Stack(
+        children: [
+          Positioned(
+            right: -20,
+            top: -20,
+            child: Icon(
+              Icons.local_fire_department_rounded,
+              size: 150,
+              color: Colors.white.withValues(alpha: 0.1),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                 Row(
+                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                   children: [
+                     Container(
+                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                       decoration: BoxDecoration(
+                         color: Colors.white.withValues(alpha: 0.2),
+                         borderRadius: BorderRadius.circular(12),
+                       ),
+                       child: Row(
+                         children: [
+                           const Icon(Icons.emoji_events_rounded, color: Colors.white, size: 16),
+                           const SizedBox(width: 6),
+                           Text(
+                             "Best: $best",
+                             style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                           ),
+                         ],
+                       ),
+                     ),
+                   ],
+                 ),
+                 const SizedBox(height: 12),
+                 Row(
+                   crossAxisAlignment: CrossAxisAlignment.end,
+                   children: [
+                     Text(
+                       "$streak",
+                       style: const TextStyle(
+                         fontSize: 48,
+                         fontWeight: FontWeight.bold,
+                         color: Colors.white,
+                         height: 1,
+                       ),
+                     ),
+                     const SizedBox(width: 8),
+                     const Padding(
+                       padding: EdgeInsets.only(bottom: 8.0),
+                       child: Text(
+                         "Day Streak",
+                         style: TextStyle(
+                           fontSize: 18,
+                           fontWeight: FontWeight.w600,
+                           color: Colors.white,
+                         ),
+                       ),
+                     ),
+                   ],
+                 ),
+                 const SizedBox(height: 8),
+                 Text(
+                   streak == 0 ? "Start your streak today!" : "Keep the flame burning!",
+                   style: TextStyle(
+                     color: Colors.white.withValues(alpha: 0.9),
+                     fontSize: 14,
+                     fontWeight: FontWeight.w500,
+                   ),
+                 ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _buildDailyPlanSection() {
+  Widget _buildModernDailyPlanSection(bool isDark) {
     if (_isLoadingPlan) {
-      return const Center(child: CircularProgressIndicator());
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(40.0),
+          child: CircularProgressIndicator(
+            color: Theme.of(context).primaryColor,
+          ),
+        ),
+      );
     }
 
     if (_dailyPlan == null) {
-      return const Text("Could not generate plan.");
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(20.0),
+          child: Text(
+            "Could not generate plan.",
+            style: TextStyle(color: isDark ? Colors.white60 : Colors.grey),
+          ),
+        ),
+      );
     }
 
     int completedCount = _dailyPlan!.tasks.where((t) => t.isCompleted).length;
-    double progress = _dailyPlan!.tasks.isEmpty ? 0 : completedCount / _dailyPlan!.tasks.length;
+    int totalCount = _dailyPlan!.tasks.length;
+    double progress = totalCount == 0 ? 0 : completedCount / totalCount;
     bool isAllCompleted = progress == 1.0;
 
     return Column(
@@ -353,110 +442,163 @@ class _HomePageState extends State<HomePage> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-             const Text(
+            Text(
               "Today's Plan",
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white : const Color(0xFF2D3436),
               ),
             ),
-            if (isAllCompleted)
-              const Text(
-                "Completed! 🎉",
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: isAllCompleted 
+                    ? Colors.green.withValues(alpha: 0.1)
+                    : Theme.of(context).primaryColor.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                isAllCompleted ? "Completed" : "${(progress * 100).toInt()}% Done",
                 style: TextStyle(
-                  fontSize: 14,
+                  color: isAllCompleted ? Colors.green : Theme.of(context).primaryColor,
                   fontWeight: FontWeight.bold,
-                  color: Colors.green
+                  fontSize: 12,
                 ),
-              )
-            else
-              Text(
-                "${(progress * 100).toInt()}% Done",
-                 style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.deepPurple
-                ),
-              )
+              ),
+            ),
           ],
         ),
-        const SizedBox(height: 8),
-        LinearProgressIndicator(
-          value: progress, 
-          backgroundColor: Colors.grey[200], 
-          borderRadius: BorderRadius.circular(4),
-          color: isAllCompleted ? Colors.green : null,
-        ),
         const SizedBox(height: 16),
-        if (isAllCompleted)
-          Container(
-            padding: const EdgeInsets.all(12),
-            margin: const EdgeInsets.only(bottom: 16),
-            decoration: BoxDecoration(
-              color: Colors.green.shade50,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.green.shade200),
-            ),
-            child: Row(
-              children: const [
-                 Icon(Icons.check_circle, color: Colors.green),
-                 SizedBox(width: 12),
-                 Expanded(
-                   child: Text(
-                     "Daily Plan Completed! Great Job keeping up with your studies.",
-                     style: TextStyle(color: Colors.green, fontWeight: FontWeight.w600),
-                   )
-                 )
-              ],
-            ),
+        
+        // Progress Bar
+        ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: LinearProgressIndicator(
+            value: progress, 
+            minHeight: 8,
+            backgroundColor: isDark ? Colors.white10 : Colors.grey[200],
+            color: isAllCompleted ? Colors.green : Theme.of(context).primaryColor,
           ),
+        ),
+        const SizedBox(height: 24),
+
+        // Tasks List
         ListView.separated(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           itemCount: _dailyPlan!.tasks.length,
-          separatorBuilder: (context, index) => const SizedBox(height: 8),
+          separatorBuilder: (context, index) => const SizedBox(height: 12),
           itemBuilder: (context, index) {
             final task = _dailyPlan!.tasks[index];
-            return Card(
-              elevation: 2,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              child: CheckboxListTile(
-                title: Text(
-                  task.title,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    decoration: task.isCompleted ? TextDecoration.lineThrough : null,
-                    color: task.isCompleted ? Colors.grey : null,
-                  ),
-                ),
-                subtitle: Text(
-                  "${task.category} • ${task.durationMinutes} min",
-                  style: TextStyle(
-                    fontSize: 12,
-                     decoration: task.isCompleted ? TextDecoration.lineThrough : null,
-                  ),
-                ),
-                value: task.isCompleted,
-                onChanged: task.isCompleted 
-                  ? null // Disable if already completed
-                  : (val) => _toggleTaskCompletion(task, val),
-                secondary: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: task.type == 'input' ? Colors.blue.withOpacity(0.1) : Colors.orange.withOpacity(0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    task.type == 'input' ? Icons.headphones : Icons.mic,
-                    color: task.type == 'input' ? Colors.blue : Colors.orange,
-                    size: 20,
-                  ),
-                ),
-              ),
-            );
+            return _buildTaskCard(task, isDark);
           },
         ),
       ],
+    );
+  }
+
+  Widget _buildTaskCard(DailyTask task, bool isDark) {
+    bool isInput = task.type == 'input';
+    Color iconColor = isInput ? Colors.blue : Colors.orange;
+    Color accentColor = isInput ? const Color(0xFFE3F2FD) : const Color(0xFFFFF3E0);
+    
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      margin: const EdgeInsets.only(bottom: 4),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF2A2A3D) : Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: task.isCompleted 
+              ? (isDark ? Colors.green.withValues(alpha: 0.3) : Colors.green.withValues(alpha: 0.2))
+              : (isDark ? Colors.white10 : Colors.transparent),
+          width: task.isCompleted ? 1.5 : 1
+        ),
+        boxShadow: [
+          if (!isDark && !task.isCompleted)
+            BoxShadow(
+              color: Colors.grey.withValues(alpha: 0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            )
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(20),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: task.isCompleted ? null : () => _toggleTaskCompletion(task, !task.isCompleted),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                // Icon Box
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: isDark ? iconColor.withValues(alpha: 0.2) : accentColor,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Icon(
+                    isInput ? Icons.headphones_rounded : Icons.mic_rounded,
+                    color: iconColor,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                
+                // Content
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        task.title,
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: task.isCompleted 
+                              ? (isDark ? Colors.white38 : Colors.grey[400])
+                              : (isDark ? Colors.white : const Color(0xFF2D3436)),
+                          decoration: task.isCompleted ? TextDecoration.lineThrough : null,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        "${task.category} • ${task.durationMinutes} min",
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isDark ? Colors.white54 : Colors.grey[500],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                
+                // Checkbox/Status
+                Container(
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: task.isCompleted ? Colors.green : Colors.transparent,
+                    border: Border.all(
+                      color: task.isCompleted ? Colors.green : Colors.grey[300]!,
+                      width: 2,
+                    ),
+                  ),
+                  child: task.isCompleted 
+                      ? const Icon(Icons.check, size: 16, color: Colors.white)
+                      : null,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

@@ -97,7 +97,15 @@ class SettingsProvider with ChangeNotifier {
   void setDailyGoal(int minutes) async {
     _dailyGoalMinutes = minutes;
     notifyListeners();
+    
+    // 1. Local storage
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('dailyGoalMinutes', minutes);
+    
+    // 2. Sync with Firebase
+    final user = AuthService().currentUser;
+    if (user != null) {
+      await AuthService().updateDailyStudyMinutes(user.id, minutes);
+    }
   }
 }

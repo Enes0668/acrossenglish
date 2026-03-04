@@ -7,6 +7,7 @@ import '../models/user_model.dart';
 import '../providers/settings_provider.dart';
 import '../services/auth_service.dart';
 import '../services/plan_service.dart';
+import 'package:fl_chart/fl_chart.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -18,6 +19,8 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin {
   DailyPlan? _dailyPlan;
   bool _isLoadingPlan = true;
+  List<DailyPlan> _weeklyHistory = [];
+  bool _isLoadingHistory = true;
   final PlanService _planService = PlanService();
   late ConfettiController _confettiController;
   late AnimationController _animationController;
@@ -39,7 +42,26 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           settingsProvider.setDailyGoal(user.dailyStudyMinutes);
       }
       _loadDailyPlan();
+      _loadWeeklyHistory();
     });
+  }
+  
+  Future<void> _loadWeeklyHistory() async {
+    final user = AuthService().currentUser;
+    if (user != null) {
+      try {
+        final history = await _planService.getCompletedTasksHistory(user.id);
+        if (mounted) {
+          setState(() {
+            _weeklyHistory = history;
+            _isLoadingHistory = false;
+          });
+        }
+      } catch (e) {
+        debugPrint("Error loading history: $e");
+        if (mounted) setState(() => _isLoadingHistory = false);
+      }
+    }
   }
   
   @override
@@ -230,6 +252,11 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                             
                             // Daily Plan
                             _buildModernDailyPlanSection(isDark),
+                            
+                            const SizedBox(height: 30),
+                            
+                            // Weekly Chart
+                            _buildProgressChartSection(isDark),
                             
                             const SizedBox(height: 20),
                           ],
@@ -599,6 +626,230 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildProgressChartSection(bool isDark) {
+    if (_isLoadingHistory) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(40.0),
+          child: CircularProgressIndicator(color: Theme.of(context).primaryColor),
+        ),
+      );
+    }
+
+    // Generate last 7 days including today
+    final now = DateTime.now();
+    List<DateTime> last7Days = List.generate(7, (i) => now.subtract(Duration(days: 6 - i)));
+    
+    // Map date index to category sums
+    List<Map<String, double>> dayCategoryMinutes = List.generate(7, (_) => {});
+    Set<String> uniqueCategories = {};
+    double maxMinutes = 0;
+
+    for (int i = 0; i < 7; i++) {
+        final date = last7Days[i];
+        final dateString = date.toIso8601String().split('T').first;
+        final dailyPlan = _weeklyHistory.firstWhere(
+            (plan) => plan.date == dateString,
+            orElse: () => DailyPlan(date: dateString, tasks: [], totalDurationMinutes: 0, completedDurationMinutes: 0)
+        );
+        
+        for (var task in dailyPlan.tasks) {
+           if (task.isCompleted) {
+               String cat = task.category.isNotEmpty ? task.category : 'Other';
+               uniqueCategories.add(cat);
+               dayCategoryMinutes[i][cat] = (dayCategoryMinutes[i][cat] ?? 0) + task.durationMinutes.toDouble();
+               if (dayCategoryMinutes[i][cat]! > maxMinutes) {
+                   maxMinutes = dayCategoryMinutes[i][cat]!;
+               }
+           }
+        }
+    }
+
+    final List<Color> palette = [
+      Colors.blue, Colors.orange, Colors.green, Colors.purple, Colors.redAccent, 
+      Colors.teal, Colors.indigo, Colors.pink, Colors.amber, Colors.cyan
+    ];
+    Map<String, Color> categoryColorMap = {};
+    int colorIdx = 0;
+    for (var cat in uniqueCategories) {
+       categoryColorMap[cat] = palette[colorIdx % palette.length];
+       colorIdx++;
+    }
+
+    List<BarChartGroupData> barGroups = [];
+    for (int i = 0; i < 7; i++) {
+       List<BarChartRodData> rods = [];
+       
+       final categoriesForDay = dayCategoryMinutes[i].keys.toList();
+       for (var cat in categoriesForDay) {
+           double minutes = dayCategoryMinutes[i][cat]!;
+           if (minutes > 0) {
+               rods.add(
+                 BarChartRodData(
+                   toY: minutes,
+                   color: categoryColorMap[cat],
+                   width: 8,
+                   borderRadius: BorderRadius.circular(4),
+                 )
+               );
+           }
+       }
+       
+       if (rods.isEmpty) {
+           rods.add(
+             BarChartRodData(
+               toY: 0,
+               width: 8,
+             )
+           );
+       }
+       
+       barGroups.add(
+         BarChartGroupData(
+           x: i,
+           barsSpace: 4,
+           barRods: rods,
+         )
+       );
+    }
+    
+    // Add padded top so chart isn't glued to the box ceiling
+    maxMinutes = maxMinutes < 10 ? 10 : maxMinutes * 1.2;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          "Activities Progress",
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: isDark ? Colors.white : const Color(0xFF2D3436),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF2A2A3D) : Colors.white,
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              if (!isDark)
+                BoxShadow(
+                  color: Colors.grey.withValues(alpha: 0.05),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                )
+            ],
+          ),
+          child: Column(
+            children: [
+              SizedBox(
+                height: 250,
+                child: BarChart(
+                  BarChartData(
+                    alignment: BarChartAlignment.spaceAround,
+                    maxY: maxMinutes,
+                    barTouchData: BarTouchData(
+                      touchTooltipData: BarTouchTooltipData(
+                        getTooltipColor: (_) => isDark ? Colors.grey[800]! : Colors.blueGrey,
+                        getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                          String catName = "Other";
+                          categoryColorMap.forEach((key, value) {
+                            if (value == rod.color) catName = key;
+                          });
+                          return BarTooltipItem(
+                            "$catName: ${rod.toY.toInt()} min",
+                            const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                          );
+                        },
+                      ),
+                    ),
+                    titlesData: FlTitlesData(
+                      show: true,
+                      rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                      topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                      bottomTitles: AxisTitles(
+                        sideTitles: SideTitles(
+                          showTitles: true,
+                          reservedSize: 30,
+                          getTitlesWidget: (value, meta) {
+                            if (value.toInt() < 0 || value.toInt() >= 7) return const SizedBox();
+                            final date = last7Days[value.toInt()];
+                            final isToday = value.toInt() == 6;
+                            final text = isToday ? "Today" : "${date.day}/${date.month}";
+                            return Padding(
+                              padding: const EdgeInsets.only(top: 8.0),
+                              child: Text(
+                                text,
+                                style: TextStyle(
+                                  color: isDark ? Colors.white60 : Colors.grey[600],
+                                  fontSize: 10,
+                                  fontWeight: isToday ? FontWeight.bold : FontWeight.normal,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                      leftTitles: AxisTitles(
+                        sideTitles: SideTitles(
+                          showTitles: true,
+                          reservedSize: 40,
+                          interval: maxMinutes / 4 > 0 ? maxMinutes / 4 : 1,
+                          getTitlesWidget: (value, meta) {
+                            return Text(
+                              "${value.toInt()}m",
+                              style: TextStyle(
+                                color: isDark ? Colors.white60 : Colors.grey[600],
+                                fontSize: 10,
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                    borderData: FlBorderData(show: false),
+                    gridData: FlGridData(
+                      show: true,
+                      drawVerticalLine: false,
+                      horizontalInterval: maxMinutes / 4 > 0 ? maxMinutes / 4 : 1,
+                      getDrawingHorizontalLine: (value) {
+                        return FlLine(
+                          color: isDark ? Colors.white24 : Colors.grey[200],
+                          strokeWidth: 1,
+                        );
+                      },
+                    ),
+                    barGroups: barGroups,
+                  ),
+                ),
+              ),
+              if (uniqueCategories.isNotEmpty) ...[
+                const SizedBox(height: 20),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 8,
+                  alignment: WrapAlignment.center,
+                  children: categoryColorMap.entries.map((e) {
+                    return Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(width: 12, height: 12, decoration: BoxDecoration(color: e.value, shape: BoxShape.circle)),
+                        const SizedBox(width: 6),
+                        Text(e.key, style: TextStyle(color: isDark ? Colors.white70 : Colors.grey[700], fontSize: 12)),
+                      ],
+                    );
+                  }).toList(),
+                ),
+              ]
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
